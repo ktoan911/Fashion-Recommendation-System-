@@ -1,3 +1,4 @@
+import os
 from argparse import ArgumentParser
 
 import torch
@@ -134,6 +135,32 @@ def evaluate_model(model, val_loader, device, k=10):
     return avg_recall_at_k
 
 
+def load_model_checkpoint(checkpoint_path, model, optimizer=None):
+    """
+    Load model checkpoint từ file .pt
+
+    Args:
+        checkpoint_path: đường dẫn đến file checkpoint
+        model: instance của model cần load weights
+        optimizer: optimizer (optional) để tiếp tục training
+
+    Returns:
+        dict chứa thông tin checkpoint
+    """
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model.load_state_dict(checkpoint["model_state_dict"])
+
+    if optimizer is not None and "optimizer_state_dict" in checkpoint:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    print(f"Đã load model từ checkpoint: {checkpoint_path}")
+    print(f"  Epoch: {checkpoint.get('epoch', 'N/A')}")
+    print(f"  Loss: {checkpoint.get('loss', 'N/A')}")
+    print(f"  Recall@10: {checkpoint.get('recall_at_10', 'N/A')}")
+
+    return checkpoint
+
+
 image_transform = transforms.Compose(
     [
         transforms.Resize((224, 224)),
@@ -167,6 +194,10 @@ optimizer = optim.Adam(model.parameters(), lr=4e-4, betas=(0.55, 0.999))
 
 num_epochs = 100
 validation_frequency = 5
+
+# Thêm biến để track best model
+best_recall = 0.0
+best_model_path = None
 
 train_losses = []
 val_recalls = []
@@ -216,6 +247,44 @@ for epoch in range(num_epochs):
         print(f"  Training Loss: {avg_loss:.4f}")
         print(f"  Validation R@10: {val_recall_10:.4f}")
         print("-" * 50)
+
+        # Lưu model checkpoint định kỳ
+        os.makedirs("checkpoints", exist_ok=True)
+        checkpoint_path = (
+            f"checkpoints/model_epoch_{epoch + 1}_recall_{val_recall_10:.4f}.pt"
+        )
+        torch.save(
+            {
+                "epoch": epoch + 1,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "loss": avg_loss,
+                "recall_at_10": val_recall_10,
+                "train_losses": train_losses,
+                "val_recalls": val_recalls,
+            },
+            checkpoint_path,
+        )
+        print(f"Model checkpoint đã được lưu: {checkpoint_path}")
+
+        # Lưu best model nếu recall tốt hơn
+        if val_recall_10 > best_recall:
+            best_recall = val_recall_10
+            best_model_path = f"checkpoints/best_model_recall_{best_recall:.4f}.pt"
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": avg_loss,
+                    "recall_at_10": val_recall_10,
+                    "train_losses": train_losses,
+                    "val_recalls": val_recalls,
+                },
+                best_model_path,
+            )
+            print(f"🎉 Best model được cập nhật: {best_model_path}")
+
     else:
         print(f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {avg_loss:.4f}")
 
@@ -225,8 +294,37 @@ print("=" * 60)
 final_recall_10 = evaluate_model(model, val_loader, device, k=10)
 print(f"Kết quả cuối cùng - Validation R@10: {final_recall_10:.4f}")
 if val_recalls:
-    best_recall = max(val_recalls)
-    print(f"R@10 tốt nhất trong quá trình training: {best_recall:.4f}")
+    best_recall_training = max(val_recalls)
+    print(f"R@10 tốt nhất trong quá trình training: {best_recall_training:.4f}")
 
 print(f"Training Loss cuối cùng: {train_losses[-1]:.4f}")
+
+# Lưu model cuối cùng
+os.makedirs("checkpoints", exist_ok=True)
+final_model_path = (
+    f"checkpoints/final_model_epoch_{num_epochs}_recall_{final_recall_10:.4f}.pt"
+)
+torch.save(
+    {
+        "epoch": num_epochs,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "final_loss": train_losses[-1],
+        "final_recall_at_10": final_recall_10,
+        "train_losses": train_losses,
+        "val_recalls": val_recalls,
+        "best_recall": best_recall if val_recalls else final_recall_10,
+    },
+    final_model_path,
+)
+print(f"Final model đã được lưu: {final_model_path}")
+
+# Lưu chỉ model weights (nhẹ hơn) để dễ load
+model_weights_path = "checkpoints/fashion_vlp_weights.pt"
+torch.save(model.state_dict(), model_weights_path)
+print(f"Model weights đã được lưu: {model_weights_path}")
+
+if best_model_path:
+    print(f"Best model đã lưu tại: {best_model_path}")
+
 print("=" * 60)
