@@ -46,7 +46,7 @@ class FashionDataset(Dataset):
         landmarks = (
             self.landmark_detection.detect(crop_ref_image)
             if crop_ref_image
-            else self.landmark_detection.detect(ref_img_path)
+            else self.landmark_detection.detect(ref_image)
         )
 
         if self.transform:
