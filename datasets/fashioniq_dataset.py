@@ -43,22 +43,23 @@ class FashionDataset(Dataset):
         crop_target_image = self.clothing_detection.get_highest_confidence_object(
             target_image
         )
-        landmarks = (
-            self.landmark_detection.detect(crop_ref_image)
-            if crop_ref_image
-            else self.landmark_detection.detect(ref_image)
-        )
+        
+        # Detect landmarks - ưu tiên crop image, fallback về original image
+        if crop_ref_image is not None:
+            landmarks = self.landmark_detection.detect(crop_ref_image)
+        else:
+            landmarks = self.landmark_detection.detect(ref_image)
 
         if self.transform:
             ref_image_resized = self.transform(ref_image)
             crop_ref_image = (
-                self.transform(crop_ref_image) if crop_ref_image else crop_ref_image
+                self.transform(crop_ref_image) if crop_ref_image else ref_image_resized
             )
             target_image_resized = self.transform(target_image)
             crop_target_image = (
                 self.transform(crop_target_image)
                 if crop_target_image
-                else crop_target_image
+                else target_image_resized
             )
             landmarks = self.resize_points(ref_image, landmarks)
 
@@ -69,8 +70,6 @@ class FashionDataset(Dataset):
             "crop_target_image": crop_target_image,
             "feedback_tokens": torch.tensor(feedback_tokens),
             "landmarks": landmarks
-            if landmarks.numel() != 0
-            else torch.zeros((1, 2), dtype=torch.float32),
         }
         return sample
 
