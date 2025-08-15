@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -12,6 +14,12 @@ from datasets.fashioniq_dataset import FashionDataset
 from modules.fashion_vlp import (
     FashionVLP,  # Tưởng tượng có file model.py định nghĩa lớp này
 )
+
+parser = ArgumentParser()
+parser.add_argument("--batch", default=64, type=int)
+parser.add_argument("--path-file", required=True, type=str)
+parser.add_argument("--path-folder", required=True, type=str)
+args = parser.parse_args()
 
 
 # Hàm mất mát: Batch-based classification loss, về bản chất là CrossEntropyLoss
@@ -135,20 +143,20 @@ image_transform = transforms.Compose(
 )
 
 train_dataset = FashionDataset(
-    annotations_folder="data/annotations",
-    folder_img="data/images",
+    annotations_folder=args.path_file,
+    folder_img=args.path_folder,
     transform=image_transform,
     type="train",
 )
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=args.batch, shuffle=True)
 
 val_dataset = FashionDataset(
-    annotations_folder="data/annotations",
-    folder_img="data/images",
+    annotations_folder=args.path_file,
+    folder_img=args.path_folder,
     transform=image_transform,
     type="val",
 )
-val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
+val_loader = DataLoader(val_dataset, batch_size=args.batch, shuffle=False)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
