@@ -1,7 +1,14 @@
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GLOG_minloglevel"] = "3"
 import cv2
 import mediapipe as mp
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class LandmarkDetection:
@@ -9,22 +16,29 @@ class LandmarkDetection:
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
 
-    def detect(self, image_path, min_detection_confidence=0.5):
+    def detect(self, pil_image, min_detection_confidence=0.5, max_len=14):
         # Mở ảnh
-        image = cv2.imread(image_path)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        face_landmark_ids = set(range(0, 11))
+        image_rgb = np.array(pil_image.convert("RGB"))
 
         with self.mp_pose.Pose(
             static_image_mode=True, min_detection_confidence=min_detection_confidence
         ) as pose:
             results = pose.process(image_rgb)
-            return [
-                [lm.x, lm.y]
-                for idx, lm in enumerate(results.pose_landmarks.landmark)
-                if idx not in face_landmark_ids and 0 <= lm.x <= 1 and 0 <= lm.y <= 1
-            ]
+            landmarks = (
+                [
+                    [lm.x, lm.y]
+                    for lm in results.pose_landmarks.landmark
+                    if 0 <= lm.x <= 1 and 0 <= lm.y <= 1
+                ]
+                if results.pose_landmarks
+                else []
+            )
+        padded = [[0, 0] for _ in range(max_len)]
+        for i, point in enumerate(landmarks):
+            if i >= max_len:
+                break
+            padded[i] = point
+        return padded
 
     def print_on_img(self, results, image_path):
         image = cv2.imread(image_path)
@@ -56,7 +70,7 @@ class LandmarkDetection:
 
         # F.grid_sample request[B, H_out, W_ot, 2].
         # [Batch, 1, Num_Landmarks, 2].
-        grid = grid.view(batch_size, 1, num_landmarks, 2)
+        grid = grid.view(batch_size, 1, num_landmarks, 2).to(device)
 
         sampled_features = F.grid_sample(
             feature_map,

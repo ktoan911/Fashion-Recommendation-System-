@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
-from attention import ContextualAttention, LandmarkAttention, PositionalAttention
+
+from modules.attention import (
+    ContextualAttention,
+    LandmarkAttention,
+    PositionalAttention,
+)
 
 
 class TargetBlock(nn.Module):
@@ -24,8 +29,7 @@ class TargetBlock(nn.Module):
         # Lớp chiếu (projection) cuối cùng để khớp với không gian của f_ref
         self.projection = nn.Linear(d_img, d_model)
 
-    def forward(self, target_image, cropped_image):
-
+    def forward(self, target_image, cropped_image, landmark_locations):
         f_whole_spat = self.feature_extractor.forward_features(
             target_image
         )  # [B, C, H, W]
@@ -33,7 +37,7 @@ class TargetBlock(nn.Module):
         f_crop_spat = self.feature_extractor.forward_features(cropped_image)
 
         f_lmk_spat = self._get_landmark_features(
-            target_image, f_whole_spat
+            landmark_locations, f_whole_spat
         )  # [B, L, C]
 
         f_whole_glob = self.pos_attn_whole(f_whole_spat)  # [B, C]
@@ -47,32 +51,22 @@ class TargetBlock(nn.Module):
         f_tar = self.projection(fused_target_rep)  # [B, d_model]
         return f_tar
 
-    def _get_landmark_features(self, image, feature_map):
-        # Return [Batch, Num_Landmarks, Feature_Dim]
-        landmark_locations = self.landmark_detection.detect(image)
+    def _get_landmark_features(self, landmark_locations, feature_map):
         return self.landmark_detection.get_landmark_features(
             feature_map, landmark_locations
         )
 
 
 class ReferenceBlock(nn.Module):
-    def __init__(
-        self, feature_extractor, vlp_transformer, landmark, tokenizer, d_img, d_model
-    ):
+    def __init__(self, feature_extractor, vlp_transformer, landmark, d_img, d_model):
         super().__init__()
         self.feature_extractor = feature_extractor
         self.vlp_transformer = vlp_transformer
         self.landmark_detection = landmark
-        self.tokenizer = tokenizer
         # Các lớp chiếu để đưa các đặc trưng hình ảnh về chiều d_model
         self.img_feat_proj = nn.Linear(d_img, d_model)
 
-    def forward(
-        self,
-        ref_image,
-        cropped_image,
-        text_tokens,
-    ):
+    def forward(self, ref_image, cropped_image, text_tokens, landmark_locations):
         # f_whole_spat, f_crop_spat, f_lmk_spat
         f_whole_spat = self.feature_extractor.forward_features(
             ref_image
@@ -80,7 +74,9 @@ class ReferenceBlock(nn.Module):
         f_crop_spat = self.feature_extractor.forward_features(
             cropped_image
         )  # [B, C, H, W]
-        f_lmk_spat = self._get_landmark_features(ref_image, f_whole_spat)  # [B, L, C]
+        f_lmk_spat = self._get_landmark_features(
+            landmark_locations, f_whole_spat
+        )  # [B, L, C]
 
         #  Các chuỗi đặc trưng để đưa vào Transformer
         # Flatten các đặc trưng không gian và chiếu
@@ -124,9 +120,8 @@ class ReferenceBlock(nn.Module):
         f_ref = transformer_outputs.last_hidden_state[:, 0, :]  # [B, d_model]
         return f_ref
 
-    def _get_landmark_features(self, image, feature_map):
+    def _get_landmark_features(self, landmark_locations, feature_map):
         # Return [Batch, Num_Landmarks, Feature_Dim]
-        landmark_locations = self.landmark_detection.detect(image)
         return self.landmark_detection.get_landmark_features(
             feature_map, landmark_locations
         )
