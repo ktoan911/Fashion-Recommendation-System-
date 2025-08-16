@@ -19,8 +19,6 @@ python train_optimized.py \
             --fast-validation \
             --epochs $EPOCHS \
             --checkpoint-interval 5
-        ;;
-
 
 echo "✅ Training completed! Check checkpoints/ folder for saved models."
 echo "📊 View OPTIMIZATION_GUIDE.md for more details."
