@@ -112,6 +112,21 @@ class CachedFashionDataset(Dataset):
                 self.image_cache[ref_filename] = ref_result
                 processed_images.add(ref_filename)
             else:
+                # CRITICAL FIX: Nếu image đã có trong cache nhưng landmarks là None 
+                # (vì đã được xử lý làm target trước đó), phải detect landmarks cho ref
+                if self.image_cache[ref_filename]['landmarks'] is None:
+                    ref_image = Image.open(ref_img_path).convert("RGB")
+                    crop_ref_image = self.clothing_detection.get_highest_confidence_object(ref_image)
+                    
+                    # Detect landmarks for reference
+                    if crop_ref_image is not None:
+                        landmarks = self.landmark_detection.detect(crop_ref_image)
+                    else:
+                        landmarks = self.landmark_detection.detect(ref_image)
+                    
+                    # Update landmarks in existing cache entry
+                    self.image_cache[ref_filename]['landmarks'] = landmarks
+                
                 duplicate_count += 1
             
             # Process target image (check if already processed)
@@ -203,8 +218,8 @@ class CachedFashionDataset(Dataset):
         else:
             crop_target_image = target_image
         
-        # Get cached landmarks
-        landmarks = cached_data['landmarks']
+        # Get cached landmarks (với safe fallback cho legacy cache)
+        landmarks = cached_data.get('landmarks', None)
 
         # Apply transforms
         if self.transform:
@@ -214,8 +229,9 @@ class CachedFashionDataset(Dataset):
             crop_target_image = self.transform(crop_target_image)
             
             # Resize landmarks based on original image size
+            ref_image_size = cached_data.get('ref_image_size', ref_image.size)
             landmarks = self.resize_points_from_cache(
-                cached_data['ref_image_size'], landmarks
+                ref_image_size, landmarks
             )
 
         sample = {
@@ -232,6 +248,11 @@ class CachedFashionDataset(Dataset):
         """
         Resize landmarks từ original size về new_size
         """
+        # Xử lý trường hợp points là None hoặc empty
+        if points is None or len(points) == 0:
+            # Trả về landmarks mặc định với 14 điểm (0,0) như trong LandmarkDetection.detect
+            return torch.zeros(14, 2, dtype=torch.float32)
+        
         W_orig, H_orig = original_size
         W_new, H_new = new_size
 
