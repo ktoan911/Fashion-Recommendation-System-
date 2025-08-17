@@ -25,36 +25,32 @@ def batch_classification_loss(f_ref, f_tar, temperature=0.07):
     loss = F.cross_entropy(sim_matrix, labels)
     return loss
 
-def calculate_recall_at_k(f_ref, f_tar, k=10):
-    """Tính Recall@K (R@K) cho việc đánh giá hiệu suất recommendation."""
-    f_ref = F.normalize(f_ref, p=2, dim=1)
-    f_tar = F.normalize(f_tar, p=2, dim=1)
-    similarity_matrix = torch.matmul(f_ref, f_tar.t())
-    batch_size = similarity_matrix.size(0)
-    correct_predictions = 0
-
-    for i in range(batch_size):
-        similarities = similarity_matrix[i]
-        _, top_k_indices = torch.topk(similarities, k, largest=True)
-        if i in top_k_indices:
-            correct_predictions += 1
-
-    recall_at_k = correct_predictions / batch_size
-    return recall_at_k
-
-def evaluate_model(model, val_loader, device, k=10, max_batches=None):
+def recall_at_k_from_sim(similarity_matrix: torch.Tensor, k: int = 10) -> float:
     """
-    Đánh giá mô hình với tùy chọn giới hạn số batch để tăng tốc
+    similarity_matrix: (N_query x N_gallery), đã được chuẩn hoá theo cosine (hoặc dot)
+    giả định cặp đúng của query i là gallery i (vì ta append theo cùng thứ tự).
+    """
+    Nq, Ng = similarity_matrix.shape
+    k = min(k, Ng)
+    topk_idx = similarity_matrix.topk(k, dim=1).indices                     # (Nq x k)
+    gt = torch.arange(Nq, device=similarity_matrix.device).view(-1, 1)      # (Nq x 1)
+    correct = (topk_idx == gt).any(dim=1).float().mean().item()
+    return correct
+
+
+def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size=None):
+    """
+    Đánh giá R@K trên TOÀN BỘ gallery (không phải trong-batch).
+    - Nếu 'chunk_size' được set (ví dụ 2048), sẽ tính theo từng khúc để tiết kiệm RAM.
     """
     model.eval()
-    total_recall = 0
-    num_batches = 0
+    all_ref, all_tar = [], []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_loader):
-            if max_batches and batch_idx >= max_batches:
+            if max_batches is not None and batch_idx >= max_batches:
                 break
-                
+
             ref_images = batch["reference_image"].to(device, non_blocking=True)
             target_images = batch["target_image"].to(device, non_blocking=True)
             feedback_tokens = batch["feedback_tokens"].to(device, non_blocking=True)
@@ -63,20 +59,31 @@ def evaluate_model(model, val_loader, device, k=10, max_batches=None):
             landmark_locations = batch["landmarks"]
 
             f_ref, f_tar = model(
-                ref_images,
-                feedback_tokens,
-                target_images,
-                crop_reference_images,
-                crop_target_images,
-                landmark_locations,
+                ref_images, feedback_tokens, target_images,
+                crop_reference_images, crop_target_images, landmark_locations
             )
+            all_ref.append(f_ref)   # vẫn trên GPU để tính nhanh
+            all_tar.append(f_tar)
 
-            batch_recall = calculate_recall_at_k(f_ref, f_tar, k)
-            total_recall += batch_recall
-            num_batches += 1
+    if len(all_ref) == 0:
+        return 0.0
 
-    avg_recall_at_k = total_recall / num_batches if num_batches > 0 else 0
-    return avg_recall_at_k
+    f_ref_all = F.normalize(torch.cat(all_ref, dim=0), p=2, dim=1)  # (Nq x D)
+    f_tar_all = F.normalize(torch.cat(all_tar, dim=0), p=2, dim=1)  # (Ng x D)
+
+    # Tính full-matrix nếu vừa RAM
+    if chunk_size is None:
+        sim = f_ref_all @ f_tar_all.t()                # (Nq x Ng)
+        return recall_at_k_from_sim(sim, k)
+
+    # Hoặc tính theo từng khúc query để tiết kiệm RAM
+    Nq = f_ref_all.size(0)
+    recalls = []
+    for start in range(0, Nq, chunk_size):
+        end = min(start + chunk_size, Nq)
+        sim_chunk = f_ref_all[start:end] @ f_tar_all.t()    # (chunk x Ng)
+        recalls.append(recall_at_k_from_sim(sim_chunk, k) * (end - start))
+    return sum(recalls) / Nq
 
 def main():
     parser = ArgumentParser()
