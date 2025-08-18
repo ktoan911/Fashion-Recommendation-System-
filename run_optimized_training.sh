@@ -32,7 +32,6 @@ python train_optimized.py \
             --mixed-precision \
             --fast-validation \
             --epochs 100 \
-            --checkpoint-interval 15
         ;;
 
 echo ""
