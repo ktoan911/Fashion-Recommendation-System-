@@ -9,15 +9,14 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from datasets.cached_fashioniq_dataset import CachedFashionDataset
+from datasets.fashioniq_dataset import FashionDataset
 from modules.fashion_vlp import FashionVLP
+from utils.logger import get_logger
+
+logger = get_logger("TRAINING")
 
 
 def batch_classification_loss(f_ref, f_tar, temperature=0.07):
-    """
-    Triển khai hàm loss từ phương trình (6) trong bài báo.
-    Đây là loss tương phản (contrastive loss) InfoNCE.
-    """
     B, D = f_ref.shape
     f_ref = F.normalize(f_ref, p=2, dim=1)
     f_tar = F.normalize(f_tar, p=2, dim=1)
@@ -28,10 +27,6 @@ def batch_classification_loss(f_ref, f_tar, temperature=0.07):
 
 
 def recall_at_k_from_sim(similarity_matrix: torch.Tensor, k: int = 10) -> float:
-    """
-    similarity_matrix: (N_query x N_gallery), đã được chuẩn hoá theo cosine (hoặc dot)
-    giả định cặp đúng của query i là gallery i (vì ta append theo cùng thứ tự).
-    """
     Nq, Ng = similarity_matrix.shape
     k = min(k, Ng)
     topk_idx = similarity_matrix.topk(k, dim=1).indices  # (Nq x k)
@@ -41,10 +36,6 @@ def recall_at_k_from_sim(similarity_matrix: torch.Tensor, k: int = 10) -> float:
 
 
 def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size=None):
-    """
-    Đánh giá R@K trên TOÀN BỘ gallery (không phải trong-batch).
-    - Nếu 'chunk_size' được set (ví dụ 2048), sẽ tính theo từng khúc để tiết kiệm RAM.
-    """
     model.eval()
     all_ref, all_tar = [], []
 
@@ -72,7 +63,7 @@ def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size
                 crop_target_images,
                 landmark_locations,
             )
-            all_ref.append(f_ref)  # vẫn trên GPU để tính nhanh
+            all_ref.append(f_ref)
             all_tar.append(f_tar)
 
     if len(all_ref) == 0:
@@ -81,12 +72,10 @@ def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size
     f_ref_all = F.normalize(torch.cat(all_ref, dim=0), p=2, dim=1)  # (Nq x D)
     f_tar_all = F.normalize(torch.cat(all_tar, dim=0), p=2, dim=1)  # (Ng x D)
 
-    # Tính full-matrix nếu vừa RAM
     if chunk_size is None:
         sim = f_ref_all @ f_tar_all.t()  # (Nq x Ng)
         return recall_at_k_from_sim(sim, k)
 
-    # Hoặc tính theo từng khúc query để tiết kiệm RAM
     Nq = f_ref_all.size(0)
     recalls = []
     for start in range(0, Nq, chunk_size):
@@ -96,59 +85,49 @@ def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size
     return sum(recalls) / Nq
 
 
-def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None, device='cpu'):
-    """
-    Load checkpoint và khôi phục training state
-    
-    Args:
-        checkpoint_path: đường dẫn đến checkpoint file
-        model: model instance
-        optimizer: optimizer instance (optional)
-        scheduler: scheduler instance (optional) 
-        device: device để load checkpoint
-        
-    Returns:
-        dict: thông tin checkpoint đã load
-    """
+def load_checkpoint(
+    checkpoint_path, model, optimizer=None, scheduler=None, device="cpu"
+):
     print(f"🔄 Loading checkpoint from: {checkpoint_path}")
-    
+
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    
+
     # Load checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    
+
     # Load model state
     model.load_state_dict(checkpoint["model_state_dict"])
     print("✅ Model state loaded")
-    
-    # Load optimizer state nếu có
+
+    # Load optimizer state
     if optimizer is not None and "optimizer_state_dict" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print("✅ Optimizer state loaded")
-    
-    # Load scheduler state nếu có
+
+    # Load scheduler state
     if scheduler is not None and "scheduler_state_dict" in checkpoint:
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         print("✅ Scheduler state loaded")
-    
-    # In thông tin checkpoint
-    print(f"📊 Checkpoint info:")
+
+    print("Checkpoint info:")
     print(f"  Epoch: {checkpoint.get('epoch', 'N/A')}")
     print(f"  Loss: {checkpoint.get('loss', 'N/A'):.4f}")
     print(f"  Recall@10: {checkpoint.get('recall_at_10', 'N/A'):.4f}")
-    
-    if 'train_losses' in checkpoint:
+
+    if "train_losses" in checkpoint:
         print(f"  Training history: {len(checkpoint['train_losses'])} epochs")
-    if 'val_recalls' in checkpoint:
+    if "val_recalls" in checkpoint:
         print(f"  Validation history: {len(checkpoint['val_recalls'])} epochs")
-    
+
     return checkpoint
 
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("--checkpoint", required=True, type=str, help="Path to checkpoint file")
+    parser.add_argument(
+        "--checkpoint", required=True, type=str, help="Path to checkpoint file"
+    )
     parser.add_argument("--batch", default=64, type=int)
     parser.add_argument("--path-file", required=True, type=str)
     parser.add_argument("--path-folder", required=True, type=str)
@@ -198,11 +177,10 @@ def main():
         ]
     )
 
-    # Datasets with caching
     print("Khởi tạo datasets với caching...")
     start_time = time.time()
 
-    train_dataset = CachedFashionDataset(
+    train_dataset = FashionDataset(
         annotations_folder=args.path_file,
         folder_img=args.path_folder,
         transform=image_transform,
@@ -210,7 +188,7 @@ def main():
         cache_dir=args.cache_dir,
     )
 
-    val_dataset = CachedFashionDataset(
+    val_dataset = FashionDataset(
         annotations_folder=args.path_file,
         folder_img=args.path_folder,
         transform=image_transform,
@@ -220,7 +198,6 @@ def main():
 
     print(f"Dataset initialization took: {time.time() - start_time:.2f}s")
 
-    # Optimized DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch,
@@ -247,7 +224,7 @@ def main():
     # Model setup
     model = FashionVLP().to(device)
 
-    # Compile model for PyTorch 2.0+
+    # Compile model
     if hasattr(torch, "compile"):
         try:
             model = torch.compile(model)
@@ -255,13 +232,10 @@ def main():
         except Exception as e:
             print(f"⚠️ Model compilation failed: {e}")
 
-    # Optimizer with weight decay
     lr = args.lr if args.lr is not None else 4e-4
     optimizer = optim.AdamW(
         model.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=0.01
     )
-
-    # Learning rate scheduler
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=3e-4,
@@ -275,37 +249,39 @@ def main():
 
     # Load checkpoint
     checkpoint = load_checkpoint(args.checkpoint, model, optimizer, scheduler, device)
-    
+
     # Khôi phục training state
-    start_epoch = checkpoint.get('epoch', 0)
-    train_losses = checkpoint.get('train_losses', [])
-    val_recalls = checkpoint.get('val_recalls', [])
+    start_epoch = checkpoint.get("epoch", 0)
+    train_losses = checkpoint.get("train_losses", [])
+    val_recalls = checkpoint.get("val_recalls", [])
     best_recall = max(val_recalls) if val_recalls else 0.0
-    
+
     print(f"\n🚀 Resuming training from epoch {start_epoch}...")
     print(f"📈 Previous best recall: {best_recall:.4f}")
-    
-    # Điều chỉnh scheduler nếu cần
-    if 'scheduler_state_dict' not in checkpoint:
+
+    if "scheduler_state_dict" not in checkpoint:
         print("⚠️ Scheduler state not found, reinitializing...")
-        # Tính toán lại scheduler cho remaining epochs
         remaining_epochs = args.epochs - start_epoch
         scheduler = optim.lr_scheduler.OneCycleLR(
             optimizer,
             max_lr=3e-4,
-            total_steps=remaining_epochs * len(train_loader) // args.gradient_accumulation,
+            total_steps=remaining_epochs
+            * len(train_loader)
+            // args.gradient_accumulation,
             pct_start=0.1,
             anneal_strategy="cos",
         )
 
-    print(f"✅ Mixed Precision Training: {'Enabled' if args.mixed_precision else 'Disabled'}")
-    print(f"✅ Gradient Accumulation Steps: {args.gradient_accumulation}")
+    print(
+        f"Mixed Precision Training: {'Enabled' if args.mixed_precision else 'Disabled'}"
+    )
+    print(f"Gradient Accumulation Steps: {args.gradient_accumulation}")
 
     # Training variables
     num_epochs = args.epochs
     best_model_path = None
 
-    print(f"\n🔄 Continuing training from epoch {start_epoch + 1} to {num_epochs}...")
+    print(f"\nContinuing training from epoch {start_epoch + 1} to {num_epochs}...")
     training_start = time.time()
 
     for epoch in range(start_epoch, num_epochs):
@@ -315,7 +291,6 @@ def main():
         epoch_start = time.time()
 
         for batch_idx, batch in enumerate(train_loader):
-            # Data loading với non_blocking
             ref_images = batch["reference_image"].to(device, non_blocking=True)
             target_images = batch["target_image"].to(device, non_blocking=True)
             feedback_tokens = batch["feedback_tokens"].to(device, non_blocking=True)
@@ -327,7 +302,6 @@ def main():
             )
             landmark_locations = batch["landmarks"]
 
-            # Forward pass with mixed precision
             if args.mixed_precision:
                 with autocast():
                     f_ref, f_tar = model(
@@ -383,7 +357,7 @@ def main():
         print(f"\n--- Validation tại Epoch {epoch + 1} ---")
         val_start = time.time()
 
-        # Fast validation nếu được enable
+        # Fast validation
         max_val_batches = 30 if args.fast_validation else None
         val_recall_10 = evaluate_model(
             model, val_loader, device, k=10, max_batches=max_val_batches
@@ -396,7 +370,9 @@ def main():
 
         # Save checkpoint
         os.makedirs("checkpoints", exist_ok=True)
-        checkpoint_path = f"checkpoints/resumed_model_epoch_{epoch + 1}_recall_{val_recall_10:.4f}.pt"
+        checkpoint_path = (
+            f"checkpoints/resumed_model_epoch_{epoch + 1}_recall_{val_recall_10:.4f}.pt"
+        )
 
         torch.save(
             {
@@ -436,14 +412,9 @@ def main():
             print(f"🏆 Best model updated: {best_model_path}")
 
     training_time = time.time() - training_start
-    print(f"\n🎉 Resumed training completed in {training_time / 3600:.2f} hours!")
+    print(f"\nResumed training completed in {training_time / 3600:.2f} hours!")
 
-    # Final evaluation
-    print("\n" + "=" * 60)
-    print("FINAL EVALUATION")
-    print("=" * 60)
     final_recall_10 = evaluate_model(model, val_loader, device, k=10)
-    print(f"Final Validation R@10: {final_recall_10:.4f}")
 
     if val_recalls:
         best_recall_training = max(val_recalls)
@@ -470,9 +441,6 @@ def main():
     )
 
     print(f"✅ Final model saved: {final_model_path}")
-
-    if best_model_path:
-        print(f"🏆 Best model: {best_model_path}")
 
 
 if __name__ == "__main__":

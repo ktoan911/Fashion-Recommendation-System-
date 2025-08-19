@@ -1,16 +1,12 @@
 #!/bin/bash
 
-# 🚀 Script chạy training optimized với các cấu hình khác nhau
-
-echo "=== FASHION VLP OPTIMIZED TRAINING ==="
-
 PATH_FILE=$1
 PATH_FOLDER=$2
 BATCH=$3
 EPOCHS=$4
 
 echo "🚀 Running Maximum Speed Configuration..."
-python train_optimized.py \
+python train.py \
             --path-file "$PATH_FILE" \
             --path-folder "$PATH_FOLDER" \
             --batch $BATCH \
@@ -19,5 +15,4 @@ python train_optimized.py \
             --fast-validation \
             --epochs $EPOCHS \
 
-echo "✅ Training completed! Check checkpoints/ folder for saved models."
-echo "📊 View OPTIMIZATION_GUIDE.md for more details."
+echo "✅ Training completed!"

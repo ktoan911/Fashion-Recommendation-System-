@@ -1,5 +1,8 @@
 from PIL import Image
 from ultralytics import YOLO
+from utils.logger import get_logger
+
+logger = get_logger("CLOTHES_DETECTION")
 
 
 class ClothesDetection:
@@ -39,4 +42,4 @@ class ClothesDetection:
             highest_conf_object_image.save(output_path)
 
         else:
-            print("Error object detection")
+            logger.info("Error object detection")
