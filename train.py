@@ -35,10 +35,6 @@ def recall_at_k_from_sim(similarity_matrix: torch.Tensor, k: int = 10) -> float:
 
 
 def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size=None):
-    """
-    Đánh giá R@K trên TOÀN BỘ gallery (không phải trong-batch).
-    - Nếu 'chunk_size' được set (ví dụ 2048), sẽ tính theo từng khúc để tiết kiệm RAM.
-    """
     model.eval()
     all_ref, all_tar = [], []
 
@@ -75,12 +71,10 @@ def evaluate_model(model, val_loader, device, k=10, max_batches=None, chunk_size
     f_ref_all = F.normalize(torch.cat(all_ref, dim=0), p=2, dim=1)  # (Nq x D)
     f_tar_all = F.normalize(torch.cat(all_tar, dim=0), p=2, dim=1)  # (Ng x D)
 
-    # Tính full-matrix nếu vừa RAM
     if chunk_size is None:
         sim = f_ref_all @ f_tar_all.t()  # (Nq x Ng)
         return recall_at_k_from_sim(sim, k)
 
-    # Hoặc tính theo từng khúc query để tiết kiệm RAM
     Nq = f_ref_all.size(0)
     recalls = []
     for start in range(0, Nq, chunk_size):

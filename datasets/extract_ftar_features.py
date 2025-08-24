@@ -147,9 +147,6 @@ class FTarExtractor:
 
 
 def main():
-    """
-    Hàm main để chạy script
-    """
     import argparse
 
     parser = argparse.ArgumentParser(
