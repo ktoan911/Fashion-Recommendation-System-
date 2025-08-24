@@ -37,7 +37,6 @@ class ClothesDetection:
         original_image = Image.open(ref_img_path).convert("RGB")
         highest_conf_object_image = self.get_highest_confidence_object(original_image)
         if highest_conf_object_image:
-            # Lưu ảnh kết quả (nếu tìm thấy)
             output_path = "highest_confidence_object.jpg"
             highest_conf_object_image.save(output_path)
 

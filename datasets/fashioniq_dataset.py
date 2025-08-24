@@ -69,12 +69,11 @@ class FashionDataset(Dataset):
         return data
 
     def _create_cache(self):
-        """Tạo cache cho toàn bộ dataset với deduplication để tránh xử lý ảnh trùng lặp"""
+      
         self.clothing_detection = ClothesDetection()
         self.landmark_detection = LandmarkDetection()
 
         self.cache = {}
-        # Cache riêng cho từng ảnh unique (tránh duplicate processing)
         self.image_cache = {}  # filename -> processed results
 
         total_samples = len(self.annotations)
@@ -108,7 +107,6 @@ class FashionDataset(Dataset):
                 else:
                     landmarks = self.landmark_detection.detect(ref_image)
 
-                # Store processed results for this unique image
                 ref_result = {
                     "crop_available": crop_ref_image is not None,
                     "landmarks": landmarks,
@@ -116,7 +114,6 @@ class FashionDataset(Dataset):
                     "crop_path": None,
                 }
 
-                # Save cropped image with unique filename
                 if crop_ref_image is not None:
                     crop_path = self.cache_dir / f"crop_{ref_filename}"
                     crop_ref_image.save(crop_path)
@@ -141,14 +138,11 @@ class FashionDataset(Dataset):
 
                 duplicate_count += 1
 
-            # Process target image (check if already processed)
             if target_filename not in self.image_cache:
                 target_image = Image.open(target_img_path).convert("RGB")
                 crop_target_image = (
                     self.clothing_detection.get_highest_confidence_object(target_image)
                 )
-
-                # Landmarks only needed for reference images in this architecture
                 target_result = {
                     "crop_available": crop_target_image is not None,
                     "landmarks": None,  # Not used for target images
@@ -232,17 +226,14 @@ class FashionDataset(Dataset):
         else:
             crop_target_image = target_image
 
-        # Get cached landmarks (với safe fallback cho legacy cache)
         landmarks = cached_data.get("landmarks", None)
 
-        # Apply transforms
         if self.transform:
             ref_image_resized = self.transform(ref_image)
             crop_ref_image = self.transform(crop_ref_image)
             target_image_resized = self.transform(target_image)
             crop_target_image = self.transform(crop_target_image)
 
-            # Resize landmarks based on original image size
             ref_image_size = cached_data.get("ref_image_size", ref_image.size)
             landmarks = self.resize_points_from_cache(ref_image_size, landmarks)
 
@@ -257,12 +248,8 @@ class FashionDataset(Dataset):
         return sample
 
     def resize_points_from_cache(self, original_size, points, new_size=(224, 224)):
-        """
-        Resize landmarks từ original size về new_size
-        """
-        # Xử lý trường hợp points là None hoặc empty
+
         if points is None or len(points) == 0:
-            # Trả về landmarks mặc định với 14 điểm (0,0) như trong LandmarkDetection.detect
             return torch.zeros(14, 2, dtype=torch.float32)
 
         W_orig, H_orig = original_size

@@ -52,17 +52,6 @@ class LandmarkDetection:
     def get_landmark_features(
         self, feature_map: torch.Tensor, normalized_landmarks: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Args:
-            feature_map (torch.Tensor)
-                Shape: [Batch, Channels, Height_fm, Width_fm]
-            normalized_landmarks
-                Shape: [Batch, Num_Landmarks, 2] với tọa độ (x, y).
-
-        Returns:
-            torch.Tensor:
-                Shape: [Batch, Num_Landmarks, Channels]
-        """
         batch_size, num_landmarks, _ = normalized_landmarks.shape
 
         # [0, 1] to [-1, 1] for grid_sample

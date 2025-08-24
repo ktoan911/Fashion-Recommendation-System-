@@ -9,11 +9,6 @@ from modules.attention import (
 
 
 class TargetBlock(nn.Module):
-    """
-    Xử lý ảnh mục tiêu (target image) để tạo ra embedding ftar.
-    Sử dụng các module attention để kết hợp các đặc trưng một cách hiệu quả.
-    """
-
     def __init__(self, feature_extractor, landmark, d_img, d_model):
         super().__init__()
         self.feature_extractor = feature_extractor
@@ -26,7 +21,6 @@ class TargetBlock(nn.Module):
         self.lmk_attn = LandmarkAttention(d_img)
         self.ctx_attn = ContextualAttention(d_img, d_img)
 
-        # Lớp chiếu (projection) cuối cùng để khớp với không gian của f_ref
         self.projection = nn.Linear(d_img, d_model)
 
     def forward(self, target_image, cropped_image, landmark_locations):
@@ -63,7 +57,6 @@ class ReferenceBlock(nn.Module):
         self.feature_extractor = feature_extractor
         self.vlp_transformer = vlp_transformer
         self.landmark_detection = landmark
-        # Các lớp chiếu để đưa các đặc trưng hình ảnh về chiều d_model
         self.img_feat_proj = nn.Linear(d_img, d_model)
 
     def forward(self, ref_image, cropped_image, text_tokens, landmark_locations):
@@ -78,8 +71,6 @@ class ReferenceBlock(nn.Module):
             landmark_locations, f_whole_spat
         )  # [B, L, C]
 
-        #  Các chuỗi đặc trưng để đưa vào Transformer
-        # Flatten các đặc trưng không gian và chiếu
         f_whole_seq = self.img_feat_proj(
             f_whole_spat.flatten(2).transpose(1, 2)
         )  # [B, H*W, d_model]
@@ -105,8 +96,6 @@ class ReferenceBlock(nn.Module):
             dim=1,
         )
 
-        # Tạo attention mask tương ứng
-        # (Cần cẩn thận khi tạo mask cho các phần khác nhau của chuỗi)
         attention_mask = torch.ones(
             combined_embeddings.shape[:2], device=combined_embeddings.device
         )
@@ -114,9 +103,7 @@ class ReferenceBlock(nn.Module):
         transformer_outputs = self.vlp_transformer(
             inputs_embeds=combined_embeddings, attention_mask=attention_mask
         )
-
-        # Lấy hidden state của token [CLS] làm embedding cuối cùng
-        # f_ref là output của [CLS] token
+        # f_ref is output of [CLS] token
         f_ref = transformer_outputs.last_hidden_state[:, 0, :]  # [B, d_model]
         return f_ref
 

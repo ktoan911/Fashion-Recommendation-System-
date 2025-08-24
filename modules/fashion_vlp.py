@@ -7,10 +7,6 @@ from modules.landmark_detection import LandmarkDetection
 
 
 class FashionVLP(nn.Module):
-    """
-    Mô hình FashionVLP hoàn chỉnh, bao gồm cả hai nhánh Reference và Target.
-    """
-
     def __init__(
         self,
         d_model=768,
@@ -18,13 +14,10 @@ class FashionVLP(nn.Module):
         vlp_model_name="bert-base-uncased",
     ):
         super().__init__()
-        # Feature Extractor (ResNet) - được chia sẻ giữa hai khối
-        # Sử dụng timm để dễ dàng lấy feature không có lớp classifer cuối cùng
-        # pretrained=True để fine-tune
         feature_extractor = timm.create_model(
             resnet_model_name, pretrained=True, num_classes=0, global_pool=""
         )
-        self.d_img = feature_extractor.num_features  # Lấy số chiều feature từ ResNet
+        self.d_img = feature_extractor.num_features 
         vlp_config = BertConfig.from_pretrained(vlp_model_name, hidden_size=d_model)
         vlp_transformer = BertModel.from_pretrained(vlp_model_name, config=vlp_config)
         landmark_detection = LandmarkDetection()

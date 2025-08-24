@@ -12,7 +12,6 @@ from torchvision import transforms
 from datasets.fashioniq_dataset import FashionDataset
 from modules.fashion_vlp import FashionVLP
 from utils.logger import get_logger
-
 logger = get_logger("TRAINING")
 
 
@@ -27,10 +26,6 @@ def batch_classification_loss(f_ref, f_tar, temperature=0.07):
 
 
 def recall_at_k_from_sim(similarity_matrix: torch.Tensor, k: int = 10) -> float:
-    """
-    similarity_matrix: (N_query x N_gallery), đã được chuẩn hoá theo cosine (hoặc dot)
-    giả định cặp đúng của query i là gallery i (vì ta append theo cùng thứ tự).
-    """
     Nq, Ng = similarity_matrix.shape
     k = min(k, Ng)  # top k candicate
     topk_idx = similarity_matrix.topk(k, dim=1).indices  # (Nq x k)

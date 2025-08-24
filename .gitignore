@@ -167,6 +167,7 @@ data/
 font/
 samples/
 tests/
+model/
 
 test.py
 test_booking_manager.py
@@ -176,4 +177,3 @@ test_room_manager.py
 init_llm.py
 prompt.py
 test_script.py
-best_optimized_model_recall_0.3406.pt

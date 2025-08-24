@@ -14,4 +14,4 @@ def tokenize_text(text: str):
         max_length=100,
     )["input_ids"].to(device)
 
-    return tokens.tolist()[0]
+    return tokens
