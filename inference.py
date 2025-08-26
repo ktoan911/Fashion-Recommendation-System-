@@ -1,12 +1,8 @@
-import sys
 from typing import List, Tuple
 
 import torch
 from PIL import Image
 from torchvision import transforms
-
-sys.path.append("/media/DATA/Fashion-Recommendation-System-")
-
 from databases.mongodb import ImageDB
 from modules.clothes_detection import ClothesDetection
 from modules.fashion_vlp import FashionVLP
@@ -17,7 +13,7 @@ from utils.data_utils import tokenize_text
 class FashionVLPInference:
     def __init__(
         self,
-        model_path: str = "/media/DATA/Fashion-Recommendation-System-/model/fashion_vlp.pt",
+        model_path: str = "model/fashion_vlp.pt",
         size_image=(224, 224),
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,7 +22,7 @@ class FashionVLPInference:
         self.model = self._load_model(model_path)
         self.size_image = (224, 224)
         self.clothes_detection = ClothesDetection(
-            "/media/DATA/Fashion-Recommendation-System-/model/yolov8n_finetune.pt"
+            "model/yolov8n_finetune.pt"
         )
         self.landmark_detection = LandmarkDetection()
 

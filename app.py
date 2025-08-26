@@ -1,9 +1,5 @@
-import sys
-
 import streamlit as st
 from PIL import Image
-
-sys.path.append("/media/DATA/Fashion-Recommendation-System-")
 
 from inference import FashionVLPInference
 
@@ -95,8 +91,9 @@ def main():
                     if results:
                         st.success(f"Found {len(results)} recommendations!")
                         image_paths = [
-                            f"/media/DATA/Fashion-Recommendation-System-/data/images/{result.get('name')}"
+                            f"data/images/{result.get('name')}"
                             for i, result in enumerate(results)
+                            if result.get("score") > 0.7
                         ]
 
                         st.subheader("🎯 Similar recommendations:")
